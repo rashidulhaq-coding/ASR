@@ -5,20 +5,19 @@ on:
     branches: [master]
 
 env:
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-  ECR_REPOSITORY: ${{ secrets.ECR_REPO }}
-  IMAGE_TAG: latest
+  AWS_REGION:       ${{ secrets.AWS_REGION }}
+  ECR_REPOSITORY:   ${{ secrets.ECR_REPO }}
+  IMAGE_TAG:        latest
 
 jobs:
   Build-and-Push-to-ECR:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
+      - name: Configure AWS credentials (GitHub runner)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -26,32 +25,34 @@ jobs:
 
       - name: Login to Amazon ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v1
+        uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, tag, and push image to Amazon ECR
+      - name: Build, tag, and push image
         run: |
-          # build with correct registry + repo name
           docker build \
             -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} .
-          # push up to ECR
           docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
 
   Deploy-on-EC2:
     needs: Build-and-Push-to-ECR
     runs-on: self-hosted  # your EC2 runner
-
     steps:
+      - name: Configure AWS credentials (EC2 runner)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
       - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v1
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Pull and run Docker image
         run: |
-          # pull the just-pushed image
           docker pull ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
-          # stop & remove existing container (if any)
           docker stop app-container || true
           docker rm   app-container || true
-          # run FastAPI on 8000 inside, exposed at host port 80
           docker run -d \
             --name app-container \
             -p 80:8000 \

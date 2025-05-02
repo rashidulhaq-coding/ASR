@@ -20,9 +20,9 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region:            ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -30,12 +30,15 @@ jobs:
 
       - name: Build, tag, and push image to Amazon ECR
         run: |
-          docker build -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPO }}:${{ env.IMAGE_TAG }} .
-          docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPO }}:${{ env.IMAGE_TAG }}
+          # build with correct registry + repo name
+          docker build \
+            -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} .
+          # push up to ECR
+          docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
 
   Deploy-on-EC2:
     needs: Build-and-Push-to-ECR
-    runs-on: self-hosted  # You must self-host this runner on your EC2 machine
+    runs-on: self-hosted  # your EC2 runner
 
     steps:
       - name: Login to Amazon ECR
@@ -43,7 +46,13 @@ jobs:
 
       - name: Pull and run Docker image
         run: |
-          docker pull ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPO }}:${{ env.IMAGE_TAG }}
+          # pull the just-pushed image
+          docker pull ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          # stop & remove existing container (if any)
           docker stop app-container || true
-          docker rm app-container || true
-          docker run -d --name app-container -p 80:80 ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPO }}:${{ env.IMAGE_TAG }}
+          docker rm   app-container || true
+          # run FastAPI on 8000 inside, exposed at host port 80
+          docker run -d \
+            --name app-container \
+            -p 80:8000 \
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}

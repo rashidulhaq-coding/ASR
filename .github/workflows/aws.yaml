@@ -2,7 +2,7 @@ name: Build and Deploy to EC2 from ECR
 
 on:
   push:
-    branches: [main]
+    branches: [master]
 
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
